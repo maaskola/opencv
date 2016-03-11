@@ -488,6 +488,94 @@ static Point2d weightedCentroid(InputArray _src, cv::Point peakLocation, cv::Siz
 
 }
 
+std::vector<cv::Point2d> cv::phaseCorrelateSubopt(InputArray _src1, InputArray _src2, size_t num_subopt, InputArray _window, double* response)
+{
+    Mat src1 = _src1.getMat();
+    Mat src2 = _src2.getMat();
+    Mat window = _window.getMat();
+
+    CV_Assert( src1.type() == src2.type());
+    CV_Assert( src1.type() == CV_32FC1 || src1.type() == CV_64FC1 );
+    CV_Assert( src1.size == src2.size);
+
+    if(!window.empty())
+    {
+        CV_Assert( src1.type() == window.type());
+        CV_Assert( src1.size == window.size);
+    }
+
+    int M = getOptimalDFTSize(src1.rows);
+    int N = getOptimalDFTSize(src1.cols);
+
+    Mat padded1, padded2, paddedWin;
+
+    if(M != src1.rows || N != src1.cols)
+    {
+        copyMakeBorder(src1, padded1, 0, M - src1.rows, 0, N - src1.cols, BORDER_CONSTANT, Scalar::all(0));
+        copyMakeBorder(src2, padded2, 0, M - src2.rows, 0, N - src2.cols, BORDER_CONSTANT, Scalar::all(0));
+
+        if(!window.empty())
+        {
+            copyMakeBorder(window, paddedWin, 0, M - window.rows, 0, N - window.cols, BORDER_CONSTANT, Scalar::all(0));
+        }
+    }
+    else
+    {
+        padded1 = src1;
+        padded2 = src2;
+        paddedWin = window;
+    }
+
+    Mat FFT1, FFT2, P, Pm, C;
+
+    // perform window multiplication if available
+    if(!paddedWin.empty())
+    {
+        // apply window to both images before proceeding...
+        multiply(paddedWin, padded1, padded1);
+        multiply(paddedWin, padded2, padded2);
+    }
+
+    // execute phase correlation equation
+    // Reference: http://en.wikipedia.org/wiki/Phase_correlation
+    dft(padded1, FFT1, DFT_REAL_OUTPUT);
+    dft(padded2, FFT2, DFT_REAL_OUTPUT);
+
+    mulSpectrums(FFT1, FFT2, P, 0, true);
+
+    magSpectrums(P, Pm);
+    divSpectrums(P, Pm, C, 0, false); // FF* / |FF*| (phase correlation equation completed here...)
+
+    idft(C, C); // gives us the nice peak shift location...
+
+    fftShift(C); // shift the energy to the center of the frame.
+
+    std::vector<Point2d> locs;
+
+    // locate the highest peak
+    for(size_t n = 0; n < num_subopt; ++n) {
+        Point peakLoc;
+        minMaxLoc(C, NULL, NULL, NULL, &peakLoc);
+
+        // get the phase shift with sub-pixel accuracy, 5x5 window seems about right here...
+        Point2d t;
+        t = weightedCentroid(C, peakLoc, Size(5, 5), response);
+
+        // max response is M*N (not exactly, might be slightly larger due to rounding errors)
+        if (response)
+          *response /= M * N;
+
+        // adjust shift relative to image center...
+        Point2d center((double)padded1.cols / 2.0, (double)padded1.rows / 2.0);
+
+        locs.push_back(center - t);
+        // cv::floodFill(C, peakLoc, cv::Scalar(0), 0, cv::Scalar(.1), cv::Scalar(1.));
+        C.at<double>(peakLoc) = 0;
+    }
+
+    return locs;
+}
+
 cv::Point2d cv::phaseCorrelate(InputArray _src1, InputArray _src2, InputArray _window, double* response)
 {
     Mat src1 = _src1.getMat();

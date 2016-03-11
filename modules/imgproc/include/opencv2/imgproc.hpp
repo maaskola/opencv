@@ -2610,6 +2610,45 @@ peak) and will be smaller when there are multiple peaks.
 CV_EXPORTS_W Point2d phaseCorrelate(InputArray src1, InputArray src2,
                                     InputArray window = noArray(), CV_OUT double* response = 0);
 
+/** @brief The function is used to detect translational shifts that occur between two images.
+
+The operation takes advantage of the Fourier shift theorem for detecting the translational shift in
+the frequency domain. It can be used for fast image registration as well as motion estimation. For
+more information please see <http://en.wikipedia.org/wiki/Phase_correlation>
+
+Calculates the cross-power spectrum of two supplied source arrays. The arrays are padded if needed
+with getOptimalDFTSize.
+
+The function performs the following equations:
+- First it applies a Hanning window (see <http://en.wikipedia.org/wiki/Hann_function>) to each
+image to remove possible edge effects. This window is cached until the array size changes to speed
+up processing time.
+- Next it computes the forward DFTs of each source array:
+\f[\mathbf{G}_a = \mathcal{F}\{src_1\}, \; \mathbf{G}_b = \mathcal{F}\{src_2\}\f]
+where \f$\mathcal{F}\f$ is the forward DFT.
+- It then computes the cross-power spectrum of each frequency domain array:
+\f[R = \frac{ \mathbf{G}_a \mathbf{G}_b^*}{|\mathbf{G}_a \mathbf{G}_b^*|}\f]
+- Next the cross-correlation is converted back into the time domain via the inverse DFT:
+\f[r = \mathcal{F}^{-1}\{R\}\f]
+- Finally, it computes the peak location and computes a 5x5 weighted centroid around the peak to
+achieve sub-pixel accuracy.
+\f[(\Delta x, \Delta y) = \texttt{weightedCentroid} \{\arg \max_{(x, y)}\{r\}\}\f]
+- If non-zero, the response parameter is computed as the sum of the elements of r within the 5x5
+centroid around the peak location. It is normalized to a maximum of 1 (meaning there is a single
+peak) and will be smaller when there are multiple peaks.
+
+@param src1 Source floating point array (CV_32FC1 or CV_64FC1)
+@param src2 Source floating point array (CV_32FC1 or CV_64FC1)
+@param window Floating point array with windowing coefficients to reduce edge effects (optional).
+@param response Signal power within the 5x5 centroid around the peak, between 0 and 1 (optional).
+@returns detected phase shift (sub-pixel) between the two arrays.
+
+@sa dft, getOptimalDFTSize, idft, mulSpectrums createHanningWindow
+ */
+CV_EXPORTS_W std::vector<Point2d> phaseCorrelateSubopt(InputArray src1, InputArray src2, size_t num_subopt,
+                                    InputArray window = noArray(), CV_OUT double* response = 0);
+
+
 /** @brief This function computes a Hanning window coefficients in two dimensions.
 
 See (http://en.wikipedia.org/wiki/Hann_function) and (http://en.wikipedia.org/wiki/Window_function)
